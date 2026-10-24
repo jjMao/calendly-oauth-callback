@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-RDF92oTf02FhkTTMZdKsqhxLqNmQIiLQGoq/Y/p8z7s='; style-src 'sha256-1w/WrZHvTz1oTs+9NZBWViDSXIiSHRzBfz8AhqNNdWY='; base-uri 'none'; form-action 'none'">
+  <title>Calendly 授权回调 · AutoClaw</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --background: #f4f6fa;
+      --surface: #fff;
+      --text: #17212f;
+      --muted: #647185;
+      --border: #e5e9f0;
+      --accent: #006bff;
+      --accent-soft: #eaf3ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100svh;
+      display: grid;
+      place-items: center;
+      padding: 28px 20px;
+      background: var(--background);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { width: min(100%, 440px); }
+    .card {
+      padding: 36px 28px;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: var(--surface);
+      box-shadow: 0 12px 48px rgb(25 45 80 / 5%);
+      text-align: center;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: .02em;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+    .symbol {
+      display: grid;
+      place-items: center;
+      width: 64px;
+      height: 64px;
+      margin: 28px auto 22px;
+      border-radius: 20px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 32px;
+      font-weight: 600;
+    }
+    h1 { margin: 0; font-size: 24px; line-height: 1.4; letter-spacing: -.02em; }
+    p { margin: 14px 0 0; color: var(--muted); font-size: 15px; line-height: 1.8; }
+    .button {
+      display: block;
+      margin-top: 28px;
+      padding: 14px 20px;
+      border-radius: 12px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .button:hover { filter: brightness(.94); }
+    .button:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+    .note { font-size: 13px; line-height: 1.7; }
+    footer { margin-top: 22px; color: var(--muted); text-align: center; font-size: 12px; }
+    [hidden] { display: none !important; }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: #11151c;
+        --surface: #1b212b;
+        --text: #eaf0f8;
+        --muted: #a2aec1;
+        --border: #2c3543;
+        --accent: #438eff;
+        --accent-soft: #223754;
+      }
+    }
+    @media (max-width: 360px) {
+      .card { padding: 28px 20px; }
+      h1 { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="card" aria-labelledby="result-title">
+      <div class="badge"><span class="dot" aria-hidden="true"></span>CALENDLY · AUTOCLAW</div>
+      <div class="symbol" id="symbol" aria-hidden="true">↗</div>
+      <div role="status" aria-live="polite">
+        <h1 id="result-title">Calendly 授权回调</h1>
+        <p id="result-message">这是 Calendly 连接器的测试回调入口。请先在 App 中发起连接，再完成 Calendly 授权。</p>
+      </div>
+      <a class="button" id="return-button" hidden>返回 AutoClaw</a>
+      <p class="note" id="return-note" hidden>如果没有自动返回，请点击上方按钮。连接结果以 App 中的提示为准。</p>
+      <noscript><p>此页面需要启用 JavaScript 才能将授权结果交回 App。请回到 App 重新发起授权。</p></noscript>
+    </section>
+    <footer>移动端连接器开发测试入口</footer>
+  </main>
+  <script>
+    "use strict";
+
+    // Fixed destination: never accept a redirect target from the query string.
+    const APP_CALLBACK = "autoclaw://connector/calendly";
+    const RESULT_KEYS = ["code", "state", "error", "error_description"];
+
+    function parseResult(search) {
+      if (!search) return { kind: "empty" };
+      const params = new URLSearchParams(search);
+      if (RESULT_KEYS.some(key => params.getAll(key).length > 1)) {
+        return { kind: "invalid" };
+      }
+      const code = params.get("code");
+      const state = params.get("state");
+      const error = params.get("error");
+      if (!state || (!code && !error) || (code && error)) {
+        return { kind: "invalid" };
+      }
+      const destination = new URL(APP_CALLBACK);
+      destination.searchParams.set("state", state);
+      if (code) destination.searchParams.set("code", code);
+      if (error) {
+        destination.searchParams.set("error", error);
+        const description = params.get("error_description");
+        if (description) destination.searchParams.set("error_description", description);
+      }
+      return { kind: error ? "error" : "received", url: destination.toString() };
+    }
+
+    function clearAddressBar() {
+      try {
+        window.history.replaceState(null, "", window.location.pathname);
+      } catch {
+        // A restrictive browser may disallow history changes. Do not log the URL.
+      }
+    }
+
+    function presentResult(result) {
+      if (result.kind === "empty") return;
+      const title = document.getElementById("result-title");
+      const message = document.getElementById("result-message");
+      if (result.kind === "invalid") {
+        title.textContent = "无法处理授权结果";
+        message.textContent = "授权参数不完整或格式无效。请回到 App 重新发起 Calendly 连接。";
+        return;
+      }
+      const failed = result.kind === "error";
+      document.getElementById("symbol").textContent = failed ? "↩" : "✓";
+      title.textContent = failed ? "授权未完成" : "已收到授权结果";
+      message.textContent = failed
+        ? "Calendly 返回了授权失败或取消的结果。请返回 App 查看并重新连接。"
+        : "请返回 AutoClaw，在 App 中继续完成 Calendly 连接。";
+      const button = document.getElementById("return-button");
+      button.href = result.url;
+      button.hidden = false;
+      document.getElementById("return-note").hidden = false;
+      window.setTimeout(() => {
+        try {
+          window.location.assign(result.url);
+        } catch {
+          // Automatic app opening may be blocked; the button remains available.
+        }
+      }, 350);
+    }
+
+    // Keep OAuth results in memory only. No storage, network requests or analytics.
+    const result = parseResult(window.location.search);
+    clearAddressBar();
+    presentResult(result);
+  </script>
+</body>
+</html>
